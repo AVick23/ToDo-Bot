@@ -37,6 +37,12 @@ func CreateDB() (*sql.DB, error) {
             notification TEXT,
             FOREIGN KEY(user_id) REFERENCES users(id)
         )`,
+		`CREATE TABLE IF NOT EXISTS completed ( 
+		id SERIAL PRIMARY KEY, 
+		user_id BIGINT NOT NULL, 
+		task TEXT NOT NULL, 
+		FOREIGN KEY(user_id) REFERENCES users(id) 
+		)`,
 	}
 
 	for _, query := range createTableDB {
@@ -96,4 +102,68 @@ func GetTasks(db *sql.DB, username string) ([]string, error) {
 		return nil, fmt.Errorf("ошибка при итерации %v", err)
 	}
 	return tasks, nil
+}
+
+func CompleteTasksDB(db *sql.DB, username string, task string) error {
+	var id int
+
+	// Получение user_id по имени пользователя
+	err := db.QueryRow("SELECT id FROM users WHERE username = $1", username).Scan(&id)
+	if err != nil {
+		return fmt.Errorf("ошибка получения userID: %w", err)
+	}
+
+	// Удаление задачи по user_id и task
+	deleteTaskSQL := "DELETE FROM tasks WHERE user_id = $1 AND tasks = $2"
+	res, err := db.Exec(deleteTaskSQL, id, task)
+	if err != nil {
+		return fmt.Errorf("не удалось удалить задачу у пользователя: %w", err)
+	}
+
+	// Проверка количества удаленных строк
+	rowsAffected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("ошибка получения количества удаленных строк: %w", err)
+	}
+	if rowsAffected == 0 {
+		fmt.Printf("Задача '%s' для пользователя '%s' не найдена\n", task, username)
+		return fmt.Errorf("задача не найдена")
+	}
+
+	// Сохранение задачи в таблице completed
+	_, err = db.Exec("INSERT INTO completed (user_id, task) VALUES ($1, $2)", id, task)
+	if err != nil {
+		return fmt.Errorf("ошибка сохранения задачи: %w", err)
+	}
+
+	fmt.Printf("Задача '%s' для пользователя '%s' успешно выполнена и удалена\n", task, username)
+	return nil
+}
+
+func DeleteTaskSQL(db *sql.DB, task string, username string) error {
+	var id int
+
+	// Получение user_id по имени пользователя
+	err := db.QueryRow("SELECT id FROM users WHERE username = $1", username).Scan(&id)
+	if err != nil {
+		return fmt.Errorf("ошибка получения userID: %w", err)
+	}
+
+	// Удаление задачи по user_id и task
+	deleteTaskSQL := "DELETE FROM tasks WHERE user_id = $1 AND tasks = $2"
+	res, err := db.Exec(deleteTaskSQL, id, task)
+	if err != nil {
+		return fmt.Errorf("не удалось удалить задачу у пользователя: %w", err)
+	}
+
+	// Проверка количества удаленных строк
+	rowsAffected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("ошибка получения количества удаленных строк: %w", err)
+	}
+	if rowsAffected == 0 {
+		fmt.Printf("Задача '%s' для пользователя '%s' не найдена\n", task, username)
+		return fmt.Errorf("задача не найдена")
+	}
+	return nil
 }
