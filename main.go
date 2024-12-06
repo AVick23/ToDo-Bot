@@ -15,11 +15,13 @@ func main() {
 		log.Fatal(err)
 	}
 
-	updates := bot.GetUpdatesChan(tgbotapi.NewUpdate(0))
+	u := tgbotapi.NewUpdate(0)
+	u.Timeout = 60
+	updates := bot.GetUpdatesChan(u)
 
 	db, err := database.ConnectDB()
 	if err != nil {
-		log.Fatalf("Не получилось подключиться к БД %v", err)
+		log.Fatalf("Не получилось подключиться к БД: %v", err)
 	}
 	defer db.Close()
 

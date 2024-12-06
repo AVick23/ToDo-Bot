@@ -4,14 +4,14 @@ import (
 	"database/sql"
 	"fmt"
 
-	_ "github.com/lib/pq" // Подключаем драйвер для PostgreSQL
+	"github.com/AVick23/ToDo-Bot/models"
+	_ "github.com/lib/pq"
 )
 
 type DB struct {
 	*sql.DB
 }
 
-// ConnectDB подключается к PostgreSQL
 func CreateDB() (*sql.DB, error) {
 	connStr := "postgres://avick123:super123@127.0.0.1:5432/todo_db?sslmode=disable"
 	db, err := sql.Open("postgres", connStr)
@@ -68,10 +68,13 @@ func SaveUser(db *sql.DB, username string) (int, error) {
 	return id, nil
 }
 
-func SaveTasks(db *sql.DB, userID int, taskText string) error {
-	_, err := db.Exec("INSERT INTO tasks (user_id, tasks) VALUES ($1, $2)", userID, taskText)
-	if err != nil {
-		return fmt.Errorf("ошибка сохранения задачи: %w", err)
+func SaveTasks(db *sql.DB, userID int, task models.Task) error {
+
+	if task.Description != "" {
+		_, err := db.Exec("INSERT INTO tasks (user_id, tasks, date, notification) VALUES ($1, $2, $3, $4)", userID, task.Description, task.Date, task.Time)
+		if err != nil {
+			return fmt.Errorf("не удалось сохранить задачу %v", err)
+		}
 	}
 	return nil
 }
@@ -107,20 +110,17 @@ func GetTasks(db *sql.DB, username string) ([]string, error) {
 func CompleteTasksDB(db *sql.DB, username string, task string) error {
 	var id int
 
-	// Получение user_id по имени пользователя
 	err := db.QueryRow("SELECT id FROM users WHERE username = $1", username).Scan(&id)
 	if err != nil {
 		return fmt.Errorf("ошибка получения userID: %w", err)
 	}
 
-	// Удаление задачи по user_id и task
 	deleteTaskSQL := "DELETE FROM tasks WHERE user_id = $1 AND tasks = $2"
 	res, err := db.Exec(deleteTaskSQL, id, task)
 	if err != nil {
 		return fmt.Errorf("не удалось удалить задачу у пользователя: %w", err)
 	}
 
-	// Проверка количества удаленных строк
 	rowsAffected, err := res.RowsAffected()
 	if err != nil {
 		return fmt.Errorf("ошибка получения количества удаленных строк: %w", err)
@@ -130,7 +130,6 @@ func CompleteTasksDB(db *sql.DB, username string, task string) error {
 		return fmt.Errorf("задача не найдена")
 	}
 
-	// Сохранение задачи в таблице completed
 	_, err = db.Exec("INSERT INTO completed (user_id, task) VALUES ($1, $2)", id, task)
 	if err != nil {
 		return fmt.Errorf("ошибка сохранения задачи: %w", err)
@@ -142,21 +141,23 @@ func CompleteTasksDB(db *sql.DB, username string, task string) error {
 
 func DeleteTaskSQL(db *sql.DB, task string, username string) error {
 	var id int
+	var idtask int
 
-	// Получение user_id по имени пользователя
 	err := db.QueryRow("SELECT id FROM users WHERE username = $1", username).Scan(&id)
 	if err != nil {
-		return fmt.Errorf("ошибка получения userID: %w", err)
+		return fmt.Errorf("ошибка получения id в таблице users: %w", err)
 	}
 
-	// Удаление задачи по user_id и task
-	deleteTaskSQL := "DELETE FROM tasks WHERE user_id = $1 AND tasks = $2"
-	res, err := db.Exec(deleteTaskSQL, id, task)
+	err = db.QueryRow("SELECT id FROM tasks WHERE user_id = $1 AND tasks = $2", id, task).Scan(&idtask)
+	if err != nil {
+		return fmt.Errorf("ошибка получения id в таблице tasks: %v", err)
+	}
+
+	res, err := db.Exec("DELETE FROM tasks WHERE id = $1", idtask)
 	if err != nil {
 		return fmt.Errorf("не удалось удалить задачу у пользователя: %w", err)
 	}
 
-	// Проверка количества удаленных строк
 	rowsAffected, err := res.RowsAffected()
 	if err != nil {
 		return fmt.Errorf("ошибка получения количества удаленных строк: %w", err)

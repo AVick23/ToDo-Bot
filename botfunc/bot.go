@@ -4,18 +4,24 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/AVick23/ToDo-Bot/database"
+	"github.com/AVick23/ToDo-Bot/models"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
 var (
-	response  string
-	buttons   [][]tgbotapi.InlineKeyboardButton
-	userState = make(map[int64]string)
+	response         string
+	buttons          [][]tgbotapi.InlineKeyboardButton
+	userState        = make(map[int64]string)
+	userStateTask    = make(map[int64]string)
+	inputDescription = make(map[int64]string)
+	inputDate        = make(map[int64]string)
+	inputTime        = make(map[int64]string)
 )
 
-func NewInlineKeyboard(text string, command string) tgbotapi.InlineKeyboardButton {
+func newInlineKeyboard(text string, command string) tgbotapi.InlineKeyboardButton {
 	return tgbotapi.NewInlineKeyboardButtonData(text, command)
 }
 
@@ -33,8 +39,9 @@ func RunProcess(bot *tgbotapi.BotAPI, updates tgbotapi.UpdatesChannel, db *sql.D
 	for update := range updates {
 		if update.Message != nil {
 			processingMessage(bot, update, db)
+
 		} else if update.CallbackQuery != nil {
-			processingCallbackQuery(bot, update, db)
+			processCallbackQuery(bot, update, db)
 		}
 	}
 }
@@ -47,12 +54,12 @@ func processingMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update, db *sql.DB)
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Выберите опцию:")
 		keyboard := tgbotapi.NewInlineKeyboardMarkup(
 			tgbotapi.NewInlineKeyboardRow(
-				NewInlineKeyboard("Мой день", "day"),
-				NewInlineKeyboard("Запланированное", "planned"),
+				newInlineKeyboard("Мой день", "day"),
+				newInlineKeyboard("Запланированное", "planned"),
 			),
 			tgbotapi.NewInlineKeyboardRow(
-				NewInlineKeyboard("Задачи", "tasks"),
-				NewInlineKeyboard("Создать свой список", "create_list"),
+				newInlineKeyboard("Задачи", "tasks"),
+				newInlineKeyboard("Создать свой список", "create_list"),
 			),
 		)
 		msg.ReplyMarkup = keyboard
@@ -62,82 +69,168 @@ func processingMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update, db *sql.DB)
 		bot.Send(msg)
 		userState[update.Message.Chat.ID] = "state"
 	} else if userState[update.Message.Chat.ID] == "state" {
-		task := update.Message.Text
-		username := fmt.Sprintf("%v", update.Message.Chat.ID)
-
-		id, err := database.SaveUser(db, username)
-		if err != nil {
-			fmt.Printf("Не получилось сохранить в базу данных ID пользователя %v", err)
-		}
-
-		err = database.SaveTasks(db, id, task)
-		if err != nil {
-			response := "Кажется произошла ошибка, попробойти ещё раз"
-			msg := tgbotapi.NewMessage(update.Message.Chat.ID, response)
-			bot.Send(msg)
-			fmt.Printf("Произошла ошибка %v", err)
-			return
-		}
-
-		respponse := fmt.Sprintf("Ваша задача успешно сохранена: (%v)", task)
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, respponse)
-		bot.Send(msg)
-		userState[update.Message.Chat.ID] = ""
+		saveTaskUser(bot, update, db)
 	}
 }
 
-func processingCallbackQuery(bot *tgbotapi.BotAPI, update tgbotapi.Update, db *sql.DB) {
-	if update.CallbackQuery != nil {
-		username := fmt.Sprintf("%v", update.CallbackQuery.From.ID)
+func saveTaskUser(bot *tgbotapi.BotAPI, update tgbotapi.Update, db *sql.DB) {
+	chatID := update.Message.Chat.ID
 
-		// Проверка нажатия на кнопку задачи
-		if len(update.CallbackQuery.Data) > 5 && update.CallbackQuery.Data[:5] == "task_" {
-			task := update.CallbackQuery.Data[5:]
-			handleTaskAction(bot, update, task)
-			return
-		} else if len(update.CallbackQuery.Data) > 9 && update.CallbackQuery.Data[:9] == "complete_" {
-			task := update.CallbackQuery.Data[9:]
-			completeTasks(bot, update, username, task, db)
-			return
-		} else if len(update.CallbackQuery.Data) > 7 && update.CallbackQuery.Data[:7] == "delete_" {
-			task := update.CallbackQuery.Data[7:]
-			deleteTasks(bot, update, username, task, db)
-			return
-		}
+	if _, ok := userStateTask[chatID]; !ok {
+		userStateTask[chatID] = "description"
+	}
 
-		tasks, err := database.GetTasks(db, username)
-		if err != nil {
-			response := "Не удалось получить задания, попробуйте ещё раз"
-			log.Printf("Ошибка получения задач: %v", err)
-			msg := tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, response)
-			bot.Send(msg)
-			return
-		}
+	switch userStateTask[chatID] {
+	case "description":
+		handleTaskDescription(bot, update, chatID)
+	case "date":
+		handleTaskDate(bot, update, chatID)
+	case "time":
+		handleTaskTime(bot, update, chatID, db)
+	}
+}
 
-		switch update.CallbackQuery.Data {
-		case "day":
-			response = "Это ваши задачи на сегодня:\n"
-		case "planned":
-			response = "Это ваши запланированные задачи"
-		case "tasks":
-			response = "Вот список ваших задач"
-			for _, task := range tasks {
-				buttons = append(buttons, tgbotapi.NewInlineKeyboardRow(
-					tgbotapi.NewInlineKeyboardButtonData(task, "task_"+task),
-				))
-			}
-		case "create_list":
-			response = "Введите название нового списка"
-		}
+func handleTaskDescription(bot *tgbotapi.BotAPI, update tgbotapi.Update, chatID int64) {
+	inputDescription[chatID] = update.Message.Text
+	msg := tgbotapi.NewMessage(chatID, "Введите дату в формате дд.мм.гггг или нажмите 'Пропустить'.")
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("Пропустить", "skip_date"),
+		),
+	)
+	msg.ReplyMarkup = keyboard
+	bot.Send(msg)
+	userStateTask[chatID] = "date"
+}
 
-		if len(buttons) > 0 {
-			replyMarkup := tgbotapi.NewInlineKeyboardMarkup(buttons...)
-			msg := tgbotapi.NewEditMessageReplyMarkup(update.CallbackQuery.Message.Chat.ID, update.CallbackQuery.Message.MessageID, replyMarkup)
-			bot.Send(msg)
-		} else {
-			msg := tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, response)
-			bot.Send(msg)
+func handleTaskDate(bot *tgbotapi.BotAPI, update tgbotapi.Update, chatID int64) {
+	saveTaskDate(chatID, update)
+	msg := tgbotapi.NewMessage(chatID, "А теперь можете ввести время в формате чч:мм")
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("Пропустить", "skip_time"),
+		),
+	)
+	msg.ReplyMarkup = keyboard
+	bot.Send(msg)
+	userStateTask[chatID] = "time"
+}
+
+func handleTaskTime(bot *tgbotapi.BotAPI, update tgbotapi.Update, chatID int64, db *sql.DB) {
+	saveTaskTime(chatID, update)
+	userStateTask[chatID] = ""
+
+	task := models.Task{
+		Description: strings.TrimSpace(inputDescription[chatID]),
+	}
+
+	if inputDate[chatID] != "" {
+		date := inputDate[chatID]
+		task.Date = &date
+	}
+	if inputTime[chatID] != "" {
+		time := inputTime[chatID]
+		task.Time = &time
+	}
+
+	username := fmt.Sprintf("%v", chatID)
+
+	id, err := database.SaveUser(db, username)
+	if err != nil {
+		fmt.Printf("Не получилось сохранить в базу данных ID пользователя %v", err)
+	}
+
+	err = database.SaveTasks(db, id, task)
+	if err != nil {
+		response := "Кажется произошла ошибка, попробуйте ещё раз"
+		msg := tgbotapi.NewMessage(chatID, response)
+		bot.Send(msg)
+		fmt.Printf("Произошла ошибка %v", err)
+		return
+	}
+
+	response := "Ваша задача успешно сохранена: \n✍️" + task.Description
+	if task.Date != nil {
+		response += "\n🗓️" + *task.Date
+	}
+	if task.Time != nil {
+		response += "\n🕰️" + *task.Time
+	}
+	msg := tgbotapi.NewMessage(chatID, response)
+	bot.Send(msg)
+}
+
+func saveTaskDate(chatID int64, update tgbotapi.Update) {
+	if update.CallbackQuery != nil && update.CallbackQuery.Data == "skip_date" {
+		inputDate[chatID] = ""
+	}
+	userStateTask[chatID] = "time"
+}
+
+func saveTaskTime(chatID int64, update tgbotapi.Update) {
+	if update.CallbackQuery != nil && update.CallbackQuery.Data == "skip_time" {
+		inputTime[chatID] = ""
+	}
+}
+
+func processCallbackQuery(bot *tgbotapi.BotAPI, update tgbotapi.Update, db *sql.DB) {
+	if update.CallbackQuery == nil {
+		return
+	}
+
+	username := fmt.Sprintf("%v", update.CallbackQuery.From.ID)
+	callbackData := update.CallbackQuery.Data
+
+	switch {
+	case strings.HasPrefix(callbackData, "task_"):
+		handleTaskAction(bot, update, callbackData[5:])
+	case strings.HasPrefix(callbackData, "complete_"):
+		completeTasks(bot, update, username, callbackData[9:], db)
+	case strings.HasPrefix(callbackData, "delete_"):
+		deleteTasks(bot, update, username, callbackData[7:], db)
+	default:
+		handleDefaultCallback(bot, update, db, username, callbackData)
+	}
+}
+
+func handleDefaultCallback(bot *tgbotapi.BotAPI, update tgbotapi.Update, db *sql.DB, username string, callbackData string) {
+	tasks, err := database.GetTasks(db, username)
+	if err != nil {
+		log.Printf("Ошибка получения задач: %v", err)
+		msg := tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "Не удалось получить задания, попробуйте ещё раз")
+		bot.Send(msg)
+		return
+	}
+
+	buttons = [][]tgbotapi.InlineKeyboardButton{}
+
+	switch callbackData {
+	case "day":
+		response = "Это ваши задачи на сегодня:\n"
+	case "planned":
+		response = "Это ваши запланированные задачи"
+	case "tasks":
+		response = "Вот список ваших задач"
+		for _, task := range tasks {
+			buttons = append(buttons, tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData(task, "task_"+task),
+			))
 		}
+	case "create_list":
+		response = "Введите название нового списка"
+	}
+
+	if len(buttons) > 0 {
+		replyMarkup := tgbotapi.NewInlineKeyboardMarkup(buttons...)
+		msg := tgbotapi.NewEditMessageReplyMarkup(update.CallbackQuery.Message.Chat.ID, update.CallbackQuery.Message.MessageID, replyMarkup)
+		bot.Send(msg)
+	} else {
+		replyMarkup := tgbotapi.NewInlineKeyboardMarkup([]tgbotapi.InlineKeyboardButton{})
+		msg := tgbotapi.NewEditMessageReplyMarkup(update.CallbackQuery.Message.Chat.ID, update.CallbackQuery.Message.MessageID, replyMarkup)
+		bot.Send(msg)
+
+		noTask := tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, "К сожалению список ваших задач сейчас пуст")
+		bot.Send(noTask)
 	}
 }
 
@@ -145,8 +238,8 @@ func handleTaskAction(bot *tgbotapi.BotAPI, update tgbotapi.Update, task string)
 	response = fmt.Sprintf("Что вы хотите сделать с задачей: %s?", task)
 	buttons := [][]tgbotapi.InlineKeyboardButton{
 		tgbotapi.NewInlineKeyboardRow(
-			NewInlineKeyboard("Выполнил задачу", "complete_"+task),
-			NewInlineKeyboard("Удалить задачу", "delete_"+task),
+			newInlineKeyboard("Выполнил задачу", "complete_"+task),
+			newInlineKeyboard("Удалить задачу", "delete_"+task),
 		),
 	}
 	replyMarkup := tgbotapi.NewInlineKeyboardMarkup(buttons...)
