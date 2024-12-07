@@ -131,18 +131,7 @@ func GetTasksPlanned(db *sql.DB, username string) ([]models.Tasks, error) {
 			return nil, fmt.Errorf("ошибка сканирования задач: %v", err)
 		}
 
-		_, dateErr := time.Parse("02.01.2006", task.Date)
-		var notificationErr error
-		if task.Notification.Valid {
-
-			_, notificationErr = time.Parse("02.01.2006 15:04", task.Notification.String)
-		}
-
-		if dateErr == nil && (!task.Notification.Valid || notificationErr == nil) {
-			tasks = append(tasks, task)
-		} else {
-			log.Printf("Некорректная дата или время уведомления: %v, %v", task.Date, task.Notification.String)
-		}
+		tasks = append(tasks, task)
 	}
 
 	if err = rows.Err(); err != nil {

@@ -44,26 +44,49 @@ func RunProcess(bot *tgbotapi.BotAPI, updates tgbotapi.UpdatesChannel, db *sql.D
 
 func processingMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update, db *sql.DB) {
 	if update.Message.Command() == "start" {
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Я ваш личный помощник, который будет записывать все ваши задачи. Чтобы узнать, какие команды доступны, воспользуйтесь командой «/help» или просто начните вводить символ «/». Это откроет меню команд, расположенное слева от поля ввода.")
+		msg := tgbotapi.NewMessage(
+			update.Message.Chat.ID,
+			"👋 Привет! Я ваш личный помощник для управления задачами. 😊\n"+
+				"Чтобы узнать, что я умею, введите команду «/help» или просто нажмите на символ «/», чтобы открыть меню команд. 🚀",
+		)
 		bot.Send(msg)
 	} else if update.Message.Command() == "tasks" {
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Выберите опцию:")
+		msg := tgbotapi.NewMessage(
+			update.Message.Chat.ID,
+			"📋 Вот что я могу сделать для вас. Выберите опцию:",
+		)
 		keyboard := tgbotapi.NewInlineKeyboardMarkup(
 			tgbotapi.NewInlineKeyboardRow(
-				newInlineKeyboard("Мой день", "day"),
-				newInlineKeyboard("Запланированное", "planned"),
+				newInlineKeyboard("📅 Мой день", "day"),
+				newInlineKeyboard("🗓️ Запланированное", "planned"),
 			),
 			tgbotapi.NewInlineKeyboardRow(
-				newInlineKeyboard("Задачи", "tasks"),
-				newInlineKeyboard("Создать свой список", "create_list"),
+				newInlineKeyboard("✅ Задачи", "tasks"),
+				newInlineKeyboard("➕ Создать свой список", "create_list"),
 			),
 		)
 		msg.ReplyMarkup = keyboard
 		bot.Send(msg)
+	} else if update.Message.Command() == "help" {
+		msg := tgbotapi.NewMessage(
+			update.Message.Chat.ID,
+			"📖 *Доступные команды:*\n\n"+
+				"/start - 👋 Начать работу с ботом и узнать, что он умеет.\n"+
+				"/tasks - 📋 Просмотреть задачи, запланированные на сегодня.\n"+
+				"/add - ✏️ Добавить новую задачу.\n"+
+				"/help - ℹ️ Показать это справочное сообщение.\n\n"+
+				"💡 *Совет:* Вы также можете воспользоваться меню команд, нажав на символ «/» рядом с полем ввода текста. 🚀",
+		)
+		msg.ParseMode = "Markdown"
+		bot.Send(msg)
 	} else if update.Message.Command() == "add" {
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Хотите добавить новую задачу?\n Напишите задачу: ")
+		msg := tgbotapi.NewMessage(
+			update.Message.Chat.ID,
+			"✏️ Хотите добавить новую задачу? Напишите её ниже, и я запомню! 😉",
+		)
 		bot.Send(msg)
 		userState[update.Message.Chat.ID] = "state"
+
 	} else if userState[update.Message.Chat.ID] == "state" {
 		savetask.SaveTaskUser(bot, update, db)
 	}
@@ -95,15 +118,20 @@ func processCallbackQuery(bot *tgbotapi.BotAPI, update tgbotapi.Update, db *sql.
 }
 
 func handleTaskAction(bot *tgbotapi.BotAPI, update tgbotapi.Update, task string) {
-	response = fmt.Sprintf("Что вы хотите сделать с задачей: %s?", task)
+	response := fmt.Sprintf(
+		"🤔 Что вы хотите сделать с задачей: *%s*?\n"+
+			"Выберите действие ниже: 👇",
+		task,
+	)
 	buttons := [][]tgbotapi.InlineKeyboardButton{
 		tgbotapi.NewInlineKeyboardRow(
-			newInlineKeyboard("Выполнил задачу", "complete_"+task),
-			newInlineKeyboard("Удалить задачу", "delete_"+task),
+			newInlineKeyboard("✅ Выполнить задачу", "complete_"+task),
+			newInlineKeyboard("❌ Удалить задачу", "delete_"+task),
 		),
 	}
 	replyMarkup := tgbotapi.NewInlineKeyboardMarkup(buttons...)
 	msg := tgbotapi.NewMessage(update.CallbackQuery.Message.Chat.ID, response)
+	msg.ParseMode = "Markdown"
 	msg.ReplyMarkup = replyMarkup
 	bot.Send(msg)
 }
