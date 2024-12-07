@@ -118,7 +118,6 @@ func GetTasksPlanned(db *sql.DB, username string) ([]models.Tasks, error) {
 		return nil, fmt.Errorf("ошибка получения userID: %w", err)
 	}
 
-	// Скорректированный запрос SQL
 	rows, err := db.Query("SELECT tasks, date, notification FROM tasks WHERE user_id = $1 AND tasks IS NOT NULL AND date IS NOT NULL AND (notification IS NULL OR notification IS NOT NULL)", id)
 	if err != nil {
 		return nil, fmt.Errorf("ошибка выполнения задачи: %v", err)
@@ -132,11 +131,10 @@ func GetTasksPlanned(db *sql.DB, username string) ([]models.Tasks, error) {
 			return nil, fmt.Errorf("ошибка сканирования задач: %v", err)
 		}
 
-		// Проверка формата даты "дд.мм.гггг"
 		_, dateErr := time.Parse("02.01.2006", task.Date)
 		var notificationErr error
 		if task.Notification.Valid {
-			// Проверка формата даты и времени "дд.мм.гггг чч:мм"
+
 			_, notificationErr = time.Parse("02.01.2006 15:04", task.Notification.String)
 		}
 
@@ -224,17 +222,14 @@ func GetTasksDay(db *sql.DB, username string) ([]models.Day, error) {
 		return nil, fmt.Errorf("ошибка получения userID: %w", err)
 	}
 
-	// Скорректированный запрос SQL
 	rows, err := db.Query("SELECT tasks, date FROM tasks WHERE user_id = $1 AND tasks IS NOT NULL AND date IS NOT NULL", id)
 	if err != nil {
 		return nil, fmt.Errorf("ошибка выполнения задачи: %v", err)
 	}
 	defer rows.Close()
 
-	// Получаем сегодняшнюю дату в формате "дд.мм.гггг"
 	today := time.Now().Format("02.01.2006")
 
-	// Проверка даты перед добавлением задачи в слайс
 	for rows.Next() {
 		var task models.Day
 		err := rows.Scan(&task.Task, &task.Date)
@@ -242,7 +237,6 @@ func GetTasksDay(db *sql.DB, username string) ([]models.Day, error) {
 			return nil, fmt.Errorf("ошибка сканирования задач: %v", err)
 		}
 
-		// Проверка формата даты "дд.мм.гггг" и совпадения с сегодняшней датой
 		if task.Date == today {
 			tasks = append(tasks, task)
 		} else {
