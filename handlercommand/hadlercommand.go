@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"strconv"
 	"time"
 
 	"github.com/AVick23/ToDo-Bot/database"
@@ -90,4 +91,54 @@ func HandleDefaultCallback(bot *tgbotapi.BotAPI, update tgbotapi.Update, db *sql
 func getRandomEmoji() string {
 	rand.Seed(time.Now().UnixNano())
 	return emojiList[rand.Intn(len(emojiList))]
+}
+
+func CheckAndSendReminders(db *sql.DB, bot *tgbotapi.BotAPI) {
+	ticker := time.NewTicker(1 * time.Minute)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		currentTime := time.Now()
+		currentDate := currentTime.Format("02.01.2006")
+		currentTimeStr := currentTime.Format("15:04")
+
+		rows, err := db.Query(`
+            SELECT u.username, t.tasks, t.date, t.notification 
+            FROM tasks t
+            INNER JOIN users u ON t.user_id = u.id
+            WHERE t.date = $1 AND t.notification = $2 AND t.notification IS NOT NULL`, currentDate, currentTimeStr)
+		if err != nil {
+			log.Printf("Ошибка запроса задач: %v", err)
+			continue
+		}
+		defer rows.Close()
+
+		for rows.Next() {
+			var username, task, date, notification string
+			if err := rows.Scan(&username, &task, &date, &notification); err != nil {
+				log.Printf("Ошибка сканирования: %v", err)
+				continue
+			}
+
+			chatID, err := toInt64(username)
+			if err != nil {
+				log.Printf("Ошибка преобразования username в chatID: %v", err)
+				continue
+			}
+
+			message := fmt.Sprintf("🔔 Напоминание: %s\n📅 Дата: %s\n⏰ Время: %s", task, date, notification)
+			msg := tgbotapi.NewMessage(chatID, message)
+			if _, err := bot.Send(msg); err != nil {
+				log.Printf("Ошибка отправки сообщения: %v", err)
+			}
+		}
+	}
+}
+
+func toInt64(username string) (int64, error) {
+	chatID, err := strconv.ParseInt(username, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("не удалось преобразовать username: %s", username)
+	}
+	return chatID, nil
 }

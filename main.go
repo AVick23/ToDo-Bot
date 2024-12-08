@@ -6,6 +6,7 @@ import (
 
 	"github.com/AVick23/ToDo-Bot/botfunc"
 	"github.com/AVick23/ToDo-Bot/database"
+	"github.com/AVick23/ToDo-Bot/handlercommand"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
@@ -26,6 +27,8 @@ func main() {
 	defer db.Close()
 
 	fmt.Println("Всё работает, ежи братка.")
+
+	go handlercommand.CheckAndSendReminders(db, bot)
 
 	botfunc.RunProcess(bot, updates, db)
 }
