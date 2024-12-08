@@ -97,16 +97,23 @@ func CheckAndSendReminders(db *sql.DB, bot *tgbotapi.BotAPI) {
 	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
 
+	loc, err := time.LoadLocation("Europe/Moscow")
+	if err != nil {
+		log.Fatalf("Ошибка загрузки часового пояса: %v", err)
+	}
+
 	for range ticker.C {
-		currentTime := time.Now()
+
+		currentTime := time.Now().In(loc)
 		currentDate := currentTime.Format("02.01.2006")
 		currentTimeStr := currentTime.Format("15:04")
 
 		rows, err := db.Query(`
             SELECT u.username, t.tasks, t.date, t.notification 
-            FROM tasks t
-            INNER JOIN users u ON t.user_id = u.id
-            WHERE t.date = $1 AND t.notification = $2 AND t.notification IS NOT NULL`, currentDate, currentTimeStr)
+            FROM tasks t 
+            INNER JOIN users u ON t.user_id = u.id 
+            WHERE t.date = $1 AND t.notification = $2 AND t.notification IS NOT NULL`,
+			currentDate, currentTimeStr)
 		if err != nil {
 			log.Printf("Ошибка запроса задач: %v", err)
 			continue
@@ -128,6 +135,7 @@ func CheckAndSendReminders(db *sql.DB, bot *tgbotapi.BotAPI) {
 
 			message := fmt.Sprintf("🔔 Напоминание: %s\n📅 Дата: %s\n⏰ Время: %s", task, date, notification)
 			msg := tgbotapi.NewMessage(chatID, message)
+
 			if _, err := bot.Send(msg); err != nil {
 				log.Printf("Ошибка отправки сообщения: %v", err)
 			}
